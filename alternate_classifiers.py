@@ -36,6 +36,13 @@ def best_guess(classifier, X):
 def main():
     print "Setting up"
 
+    classifiers = [
+        (OneVsRestClassifier(LogisticRegression(), n_jobs=-1), "OneVsRest(Logistic Regression)"),
+        (OneVsRestClassifier(SVC(), n_jobs=-1), "OneVsRest(SVC)"),
+        (DecisionTreeClassifier(), "Decision Tree Classifier"),
+        (AdaBoostClassifier(DecisionTreeClassifier()), "AdaBoost(Decision Tree Classifier)")
+    ]
+
     with open('ontologies.p') as f:
         keywords = pickle.load(f)
 
@@ -105,13 +112,6 @@ def main():
 
     feature_array = np.array(training_set.get_feature_vectors())
     label_array = np.array(training_set.get_labels())
-
-    classifiers = [
-        (OneVsRestClassifier(LogisticRegression(), n_jobs=-1), "OneVsRest(Logistic Regression)"),
-        (OneVsRestClassifier(SVC(), n_jobs=-1), "OneVsRest(SVC)"),
-        (DecisionTreeClassifier(), "Decision Tree Classifier"),
-        (AdaBoost(DecisionTreeClassifier()), "AdaBoost(Decision Tree Classifier)")
-    ]
 
     for (my_classifier, classifier_label) in classifiers:
 
