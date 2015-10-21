@@ -2,6 +2,7 @@ import datetime
 import os
 import pickle
 import diagnosis
+import disease_label_table
 from diagnosis.KeywordExtractor import *
 import numpy as np
 import re
@@ -18,6 +19,19 @@ import warnings
 import pymongo
 from DataSet import fetch_datasets
 
+def best_guess(classifier, X):
+    probs = classifier.predict_proba(X)[0]
+    p_max = max(probs)
+    result = {}
+    for i,p in enumerate(probs):
+        cutoff_ratio = 0.65
+        parents = disease_label_table.get_inferred_labels(classifier.classes_[i])
+        if p >= p_max * cutoff_ratio:
+            result[i] = max(p, result.get(i, 0))
+            for i2, label in enumerate(classifier.classes_):
+                if label in parents:
+                    result[i2] = max(p, probs[i2], result.get(i2, 0))
+    return result.items()
 
 def main():
     print "Setting up"
@@ -102,8 +116,10 @@ def main():
     for (my_classifier, classifier_label) in classifiers:
 
         print("Fitting classifier: " + classifier_label)
+        before_time = time.clock()
         my_classifier.fit(feature_array, label_array)
-        print("Classifier fit")
+        after_time = time.clock()
+        "Training time: " + str(after_time - before_time)
 
         print("Testing:")
 
@@ -112,14 +128,19 @@ def main():
             (time_offset_test_set, "Time offset set", True),
             (mixed_test_set, "Mixed test set", False),
         ]:
-            y_pred_flat = my_classifier.predict(data_set.get_feature_vectors())
-            y_pred = [[y] for y in y_pred_flat]
+            before_time = time.clock()
+            guesses = [best_guess(my_classifier, vector) for vector in data_set.get_feature_vectors()]
+            y_pred = []
+            for guess in guesses:
+                y_pred.append([my_classifier.classes_[i] for (i, p) in guess])
             print (ds_label + "\n"
                 "precision: %s recall: %s f-score: %s") %\
                 sklearn.metrics.precision_recall_fscore_support(
                     data_set.get_labels(),
                     y_pred,
                     average='micro')[0:3]
+            after_time = time.clock()
+            print("Testing time: " + str(after_time - before_time))
 
 if __name__ == "__main__":
     main()
