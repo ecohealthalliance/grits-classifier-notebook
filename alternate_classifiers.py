@@ -1,12 +1,14 @@
+from boto.s3.connection import S3Connection, Location
 import datetime
 import os
+import time
 import pickle
 import diagnosis
-import disease_label_table
 from diagnosis.KeywordExtractor import *
 import numpy as np
 import re
 import sklearn
+import disease_label_table
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.multiclass import OneVsRestClassifier
@@ -37,10 +39,10 @@ def main():
     print "Setting up"
 
     classifiers = [
-        (OneVsRestClassifier(LogisticRegression(), n_jobs=-1), "OneVsRest(Logistic Regression)"),
-        (OneVsRestClassifier(SVC(), n_jobs=-1), "OneVsRest(SVC)"),
-        (DecisionTreeClassifier(), "Decision Tree Classifier"),
-        (AdaBoostClassifier(DecisionTreeClassifier()), "AdaBoost(Decision Tree Classifier)")
+        (OneVsRestClassifier(LogisticRegression(), n_jobs=-1), "OneVsRest(Logistic Regression)", True),
+        (DecisionTreeClassifier(), "Decision Tree Classifier", False),
+        (AdaBoostClassifier(DecisionTreeClassifier()), "AdaBoost(Decision Tree Classifier)", False),
+        (OneVsRestClassifier(SVC(probability=True), n_jobs=-1), "OneVsRest(SVC)", True)
     ]
 
     with open('ontologies.p') as f:
@@ -113,34 +115,43 @@ def main():
     feature_array = np.array(training_set.get_feature_vectors())
     label_array = np.array(training_set.get_labels())
 
-    for (my_classifier, classifier_label) in classifiers:
+    with warnings.catch_warnings():
+        # The updated version of scikit will spam warnings here.
+        warnings.simplefilter("ignore")
 
-        print("Fitting classifier: " + classifier_label)
-        before_time = time.clock()
-        my_classifier.fit(feature_array, label_array)
-        after_time = time.clock()
-        "Training time: " + str(after_time - before_time)
-
-        print("Testing:")
-
-        for data_set, ds_label, print_label_breakdown in [
-            (training_set, "Training set", False),
-            (time_offset_test_set, "Time offset set", True),
-            (mixed_test_set, "Mixed test set", False),
-        ]:
+        for (my_classifier, classifier_label, add_parents) in classifiers:
+            print("Fitting classifier: " + classifier_label)
             before_time = time.clock()
-            guesses = [best_guess(my_classifier, vector) for vector in data_set.get_feature_vectors()]
-            y_pred = []
-            for guess in guesses:
-                y_pred.append([my_classifier.classes_[i] for (i, p) in guess])
-            print (ds_label + "\n"
-                "precision: %s recall: %s f-score: %s") %\
-                sklearn.metrics.precision_recall_fscore_support(
-                    data_set.get_labels(),
-                    y_pred,
-                    average='micro')[0:3]
+            my_classifier.fit(feature_array, label_array)
+            after_time = time.clock()
+            print("Training time: " + str(after_time - before_time))
+
+            print("Testing:")
+
+            before_time = time.clock()
+            for data_set, ds_label, print_label_breakdown in [
+                (training_set, "Training set", False),
+                (time_offset_test_set, "Time offset set", True),
+                (mixed_test_set, "Mixed test set", False),
+            ]:
+
+                y_true = data_set.get_labels()
+                if add_parents:
+                    guesses = [best_guess(my_classifier, vector) for vector in data_set.get_feature_vectors()]
+                    y_pred = []
+                    for guess in guesses:
+                        y_pred.append([my_classifier.classes_[i] for (i, p) in guess])
+                else:
+                    y_pred = my_classifier.predict(data_set.get_feature_vectors())
+                print (ds_label + " (macro) \n"
+                    "precision: %s recall: %s f-score: %s") %\
+                    sklearn.metrics.precision_recall_fscore_support(y_true, y_pred, average='macro')[0:3]
+                print (ds_label + " (micro) \n"
+                    "precision: %s recall: %s f-score: %s") %\
+                    sklearn.metrics.precision_recall_fscore_support(y_true, y_pred, average='micro')[0:3]
             after_time = time.clock()
             print("Testing time: " + str(after_time - before_time))
+
 
 if __name__ == "__main__":
     main()
